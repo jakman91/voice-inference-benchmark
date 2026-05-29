@@ -2,6 +2,8 @@
 
 Benchmarks three self-deployed LLMs on [Baseten](https://baseten.co) against a sub-700ms p99 latency target for voice dictation transcript cleanup — a common real-time AI use case.
 
+**[View live dashboard →](https://jakman91.github.io/voice-inference-benchmark/)**
+
 ## The question
 
 > A voice dictation app needs to clean up spoken transcripts in real time. Which model hits sub-700ms p99 total latency, and what does it cost?
@@ -69,6 +71,10 @@ python scripts/benchmark.py
 Runs ~882 requests (3 models × 14 prompts × 7 repeats × 3 concurrency levels). Takes 10–20 minutes. Results are written to `results/benchmark_results.csv`.
 
 ### 4. View the dashboard
+
+A pre-run version is live at **[jakman91.github.io/voice-inference-benchmark](https://jakman91.github.io/voice-inference-benchmark/)**.
+
+To run locally against your own results:
 
 ```bash
 cd docs && python3 -m http.server 8080
