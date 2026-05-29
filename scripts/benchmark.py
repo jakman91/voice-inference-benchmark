@@ -67,8 +67,8 @@ REPEATS = 7
 WARMUP_REQUESTS = 3
 LATENCY_TARGET_S = 0.700  # sub-700ms p99 TTFT requirement
 
-RESULTS_PATH = Path(__file__).parent.parent / "results" / "benchmark_results.csv"
-SAMPLES_DIR = Path(__file__).parent.parent / "results" / "samples"
+RESULTS_PATH = Path(__file__).parent.parent / "docs" / "results" / "benchmark_results.csv"
+SAMPLES_DIR = Path(__file__).parent.parent / "docs" / "results" / "samples"
 
 CSV_FIELDS = [
     "model_name", "concurrency", "repeat_index", "prompt_index",

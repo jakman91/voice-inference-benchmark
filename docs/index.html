@@ -555,7 +555,7 @@
       findings.map(f => `<li>${f}</li>`).join('');
   }
 
-  Papa.parse('../results/benchmark_results.csv', {
+  Papa.parse('results/benchmark_results.csv', {
     download: true,
     header: true,
     dynamicTyping: true,

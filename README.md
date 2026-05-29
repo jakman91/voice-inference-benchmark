@@ -31,11 +31,11 @@ models/
   llama-3.3-70b/config.yaml
 scripts/
   benchmark.py                  # Async benchmark — streams all 3 models
-dashboard/
+docs/
   index.html                    # Single-file dashboard (Chart.js + PapaParse)
-results/
-  benchmark_results.csv         # Pre-run results — open dashboard immediately
-  samples/                      # Sample model outputs for quality review
+  results/
+    benchmark_results.csv       # Pre-run results — open dashboard immediately
+    samples/                    # Sample model outputs for quality review
 ```
 
 ## Run it yourself
@@ -71,7 +71,7 @@ Runs ~882 requests (3 models × 14 prompts × 7 repeats × 3 concurrency levels)
 ### 4. View the dashboard
 
 ```bash
-cd dashboard && python3 -m http.server 8080
+cd docs && python3 -m http.server 8080
 # open http://localhost:8080
 ```
 
