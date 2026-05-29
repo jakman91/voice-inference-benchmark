@@ -1,0 +1,14 @@
+[SHORT]
+INPUT:  um so yeah i need to uh schedule a meeting for thursday
+OUTPUT:  "I need to schedule a meeting for Thursday."
+
+[MEDIUM]
+INPUT:  so i had this call with the client earlier and they were saying that um they want to push back the launch date and also they had some concerns about the onboarding flow and wanted us to like simplify it a bit if we can
+OUTPUT:  I had a call with the client earlier during which they mentioned that they wish to delay the launch date. Additionally, they expressed concerns about the onboarding flow and requested that we consider simplifying it if possible.
+
+[LONG]
+INPUT:  okay so i just got out of the product review meeting and there were a lot of takeaways um first thing is that the team really liked the new dashboard design but they had some feedback around the data visualization specifically the charts are a bit hard to read on smaller screens and we should probably look at making them responsive also the filters on the left sidebar are a bit confusing to users and we got some feedback from user testing that people don't know what some of the labels mean so we should probably work with the design team to simplify those
+OUTPUT:  Following the product review meeting, several key points emerged. Firstly, the team expressed a positive reaction towards the new dashboard design. However, there was feedback regarding data visualization, particularly the charts, which appeared difficult to read on smaller screens. To address this issue, it may be beneficial to make the charts responsive.
+
+Secondly, the filters on the left sidebar received some feedback indicating user confusion. User testing results showed that some users did not understand the labels; thus, it seems prudent to collaborate with the design team to simplify these filters.
+

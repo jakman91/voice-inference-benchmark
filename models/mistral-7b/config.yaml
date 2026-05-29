@@ -1,0 +1,20 @@
+model_metadata:
+  tags:
+  - openai-compatible
+model_name: Mistral-7B-Instruct
+python_version: py313
+resources:
+  accelerator: L4
+  cpu: '1'
+  memory: 10Gi
+  use_gpu: true
+trt_llm:
+  build:
+    base_model: decoder
+    checkpoint_repository:
+      repo: mistralai/Mistral-7B-Instruct-v0.3
+      source: HF
+    max_seq_len: 8192
+    num_builder_gpus: 2
+    quantization_type: fp8
+    tensor_parallel_count: 1

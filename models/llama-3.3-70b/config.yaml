@@ -1,0 +1,22 @@
+model_metadata:
+  tags:
+  - openai-compatible
+model_name: Llama-3.3-70B-Instruct
+python_version: py313
+resources:
+  accelerator: H100:4
+  cpu: '1'
+  memory: 10Gi
+  use_gpu: true
+trt_llm:
+  build:
+    base_model: decoder
+    checkpoint_repository:
+      repo: meta-llama/Llama-3.3-70B-Instruct
+      runtime_secret_name: hf_access_token
+      source: HF
+    max_seq_len: 8192
+    quantization_type: fp8_kv
+    tensor_parallel_count: 4
+  runtime:
+    served_model_name: Llama-3.3-70B-Instruct

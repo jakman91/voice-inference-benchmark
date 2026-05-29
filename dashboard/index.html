@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice Dictation Inference Benchmark</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+      background: #F1F7EF;
+      color: #1e293b;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #0f172a;
+      padding: 2rem 3rem;
+      border-bottom: 3px solid #19E76E;
+      display: flex;
+      align-items: baseline;
+      gap: 2rem;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #f8fafc;
+      letter-spacing: -0.3px;
+      white-space: nowrap;
+    }
+
+    header p {
+      color: #64748b;
+      font-size: 0.85rem;
+      letter-spacing: 0.8px;
+    }
+
+    main {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    /* ── Cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.4rem 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      border-top: 3px solid var(--accent);
+    }
+
+    .card:nth-child(1) { --accent: #19E76E; }
+    .card:nth-child(2) { --accent: #00B86B; }
+    .card:nth-child(3) { --accent: #FFA9FD; }
+    .card:nth-child(4) { --accent: #60a5fa; }
+
+    .card-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #94a3b8;
+      margin-bottom: 0.5rem;
+    }
+
+    .card-value {
+      font-size: 2rem;
+      font-weight: 800;
+      color: #0f172a;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .card-sub {
+      font-size: 0.72rem;
+      color: #94a3b8;
+      margin-top: 0.45rem;
+    }
+
+    /* ── Findings ── */
+    .findings {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      margin-bottom: 1.5rem;
+    }
+
+    .findings h2, .chart-box h2, .chart-full h2, .table-box h2 {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 1.25rem;
+    }
+
+    .findings ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+    }
+
+    .findings li {
+      display: flex;
+      gap: 0.85rem;
+      align-items: flex-start;
+      font-size: 0.9rem;
+      color: #334155;
+      line-height: 1.55;
+    }
+
+    .findings li::before {
+      content: '▸';
+      color: #00B86B;
+      font-size: 0.8rem;
+      margin-top: 0.18rem;
+      flex-shrink: 0;
+    }
+
+    /* ── Charts ── */
+    .charts-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .chart-box, .chart-full {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      margin-bottom: 1.25rem;
+    }
+
+    .chart-scope {
+      font-weight: 400;
+      color: #cbd5e1;
+      text-transform: none;
+      letter-spacing: 0;
+      font-size: 0.68rem;
+    }
+
+    .chart-wrap    { position: relative; height: 280px; }
+    .chart-wrap-sm { position: relative; height: 240px; }
+
+    /* ── Table ── */
+    .table-box {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      overflow-x: auto;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+
+    th {
+      text-align: left;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: #94a3b8;
+      padding: 0.6rem 1rem;
+      border-bottom: 2px solid #f1f5f9;
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 0.75rem 1rem;
+      color: #334155;
+      border-bottom: 1px solid #f8fafc;
+      white-space: nowrap;
+    }
+
+    tr.recommended td { font-weight: 700; background: #f0fdf4; }
+    tr.recommended td:first-child { border-left: 3px solid #19E76E; }
+
+    .pass    { color: #16a34a; font-weight: 700; }
+    .partial { color: #d97706; font-weight: 700; }
+    .fail    { color: #dc2626; font-weight: 700; }
+
+    #error {
+      display: none;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+      color: #b91c1c;
+      margin-bottom: 1.5rem;
+      font-size: 0.875rem;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Voice Dictation Inference Benchmark</h1>
+  <p id="header-subtitle">TRT-LLM &middot; Baseten &middot; sub-700ms target</p>
+</header>
+
+<main>
+  <div id="error"></div>
+
+  <div class="findings">
+    <h2>Key Findings</h2>
+    <ul id="findings-list"><li>Loading data…</li></ul>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">Models Tested</div>
+      <div class="card-value" id="val-models">—</div>
+      <div class="card-sub">in this benchmark run</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Passing @ c=1</div>
+      <div class="card-value" id="val-pass-c1">—</div>
+      <div class="card-sub">p99 latency ≤ 700ms</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Passing @ c=10</div>
+      <div class="card-value" id="val-pass-c10">—</div>
+      <div class="card-sub">p99 latency ≤ 700ms</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Best Cost / Request</div>
+      <div class="card-value" id="val-cost">—</div>
+      <div class="card-sub" id="sub-cost">at c=5 · median</div>
+    </div>
+  </div>
+
+  <div class="chart-full">
+    <h2>
+      p99 Total Latency by Model &amp; Concurrency
+      &nbsp;<span class="chart-scope">· short + medium prompts only (long utterances exceed 700ms regardless of model)</span>
+    </h2>
+    <div class="chart-wrap"><canvas id="chartLatency"></canvas></div>
+  </div>
+
+  <div class="chart-full" id="cost-section" style="display:none">
+    <h2>Cost per Request (USD) <span class="chart-scope">· amortized across concurrent requests</span></h2>
+    <div class="chart-wrap"><canvas id="chartCostReq"></canvas></div>
+  </div>
+
+  <div class="table-box">
+    <h2>Model Comparison &amp; Recommendation</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>GPU</th>
+          <th>p99 Latency c=1</th>
+          <th>p99 Latency c=5</th>
+          <th>p99 Latency c=10</th>
+          <th>Passes Target?</th>
+          <th>Cost / Request (c=5)</th>
+          <th>Cost / 1K Tokens (c=5)</th>
+        </tr>
+      </thead>
+      <tbody id="rec-tbody"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+  const LEVELS = [1, 5, 10];
+  const TARGET_S = 0.700;
+  const TARGET_PROMPTS = new Set(['short', 'medium']);
+
+  // GPU metadata — keep in sync with MODELS in scripts/benchmark.py
+  const MODEL_META = {
+    'Qwen-2.5-3B':         { gpu: 'L4' },
+    'Mistral-7B-Instruct':  { gpu: 'L4' },
+    'Llama-3.3-70B':        { gpu: 'H100×4' },
+  };
+
+  const PALETTE = [
+    { bg: 'rgba(25,231,110,0.80)',  border: '#19E76E' },
+    { bg: 'rgba(255,169,253,0.80)', border: '#FFA9FD' },
+    { bg: 'rgba(96,165,250,0.80)',  border: '#60a5fa' },
+    { bg: 'rgba(251,191,36,0.80)',  border: '#fbbf24' },
+  ];
+
+  function pct(arr, p) {
+    if (!arr.length) return 0;
+    const s = [...arr].sort((a, b) => a - b);
+    const idx = (p / 100) * (s.length - 1);
+    const lo = Math.floor(idx), hi = Math.ceil(idx);
+    return lo === hi ? s[lo] : s[lo] + (s[hi] - s[lo]) * (idx - lo);
+  }
+
+  function fmtMs(s) {
+    if (!s) return '—';
+    return s < 1 ? `${Math.round(s * 1000)}ms` : `${s.toFixed(2)}s`;
+  }
+
+  function fmtCost(v) {
+    if (v == null || isNaN(v) || v <= 0) return '—';
+    return `$${v.toFixed(5)}`;
+  }
+
+  const axisStyle = {
+    grid: { color: '#f1f5f9' },
+    ticks: { color: '#64748b', font: { size: 11 } },
+  };
+
+  const targetAnnotation = {
+    type: 'line',
+    yMin: TARGET_S, yMax: TARGET_S,
+    borderColor: 'rgba(239,68,68,0.65)',
+    borderWidth: 2,
+    borderDash: [8, 5],
+    label: {
+      display: true,
+      content: '700ms target',
+      color: '#ef4444',
+      backgroundColor: 'rgba(255,255,255,0.9)',
+      font: { size: 11, weight: '600' },
+      position: 'start',
+      yAdjust: -14,
+    },
+  };
+
+  function makeChart(id, labels, datasets, yLabel, isLatency, annotations) {
+    new Chart(document.getElementById(id), {
+      type: 'bar',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { usePointStyle: true, font: { size: 11 } } },
+          annotation: { annotations: annotations || {} },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.dataset.label}: ${isLatency ? fmtMs(ctx.parsed.y) : fmtCost(ctx.parsed.y)}`,
+            },
+          },
+        },
+        scales: {
+          y: {
+            ...axisStyle,
+            beginAtZero: true,
+            title: { display: true, text: yLabel, color: '#64748b', font: { size: 11 } },
+          },
+          x: { ...axisStyle, grid: { display: false } },
+        },
+      },
+    });
+  }
+
+  function render(rows) {
+    rows.forEach(r => { if (!r.model_name) r.model_name = 'Qwen-2.5-3B'; });
+
+    const modelNames = [...new Set(rows.map(r => r.model_name))];
+    const hasCost = rows.some(r => r.cost_per_request_usd != null && !isNaN(r.cost_per_request_usd) && r.cost_per_request_usd > 0);
+
+    function latRows(model, c) {
+      return rows.filter(r =>
+        r.model_name === model &&
+        r.concurrency === c &&
+        TARGET_PROMPTS.has(r.prompt_length)
+      );
+    }
+
+    function p99lat(model, c) {
+      return pct(latRows(model, c).map(r => r.total_latency_s), 99);
+    }
+
+    function passes(model, c) {
+      const v = p99lat(model, c);
+      return v > 0 && v <= TARGET_S;
+    }
+
+    function medCost(model, field) {
+      if (!hasCost) return Infinity;
+      const vals = rows
+        .filter(r => r.model_name === model && r.concurrency === 5)
+        .map(r => r[field])
+        .filter(v => v != null && !isNaN(v) && v > 0);
+      return vals.length ? pct(vals, 50) : Infinity;
+    }
+
+    // ── Header ────────────────────────────────────────────────────────────
+    document.getElementById('header-subtitle').textContent =
+      `${modelNames.join(' · ')} · TRT-LLM · Baseten · sub-700ms target`;
+
+    // ── Cards ─────────────────────────────────────────────────────────────
+    document.getElementById('val-models').textContent = modelNames.length;
+    const passCount = c => modelNames.filter(m => passes(m, c)).length;
+    document.getElementById('val-pass-c1').textContent  = `${passCount(1)} / ${modelNames.length}`;
+    document.getElementById('val-pass-c10').textContent = `${passCount(10)} / ${modelNames.length}`;
+
+    if (hasCost) {
+      const bestModel = [...modelNames].sort((a, b) =>
+        medCost(a, 'cost_per_request_usd') - medCost(b, 'cost_per_request_usd')
+      )[0];
+      document.getElementById('val-cost').textContent = fmtCost(medCost(bestModel, 'cost_per_request_usd'));
+      document.getElementById('sub-cost').textContent = `${bestModel} · at c=5`;
+    }
+
+    // ── Hero chart ────────────────────────────────────────────────────────
+    makeChart(
+      'chartLatency',
+      LEVELS.map(c => `c=${c}`),
+      modelNames.map((m, i) => ({
+        label: m,
+        data: LEVELS.map(c => +p99lat(m, c).toFixed(4)),
+        backgroundColor: PALETTE[i % PALETTE.length].bg,
+        borderColor:     PALETTE[i % PALETTE.length].border,
+        borderWidth: 1.5,
+        borderRadius: 4,
+      })),
+      'p99 Latency (s)',
+      true,
+      { target: targetAnnotation },
+    );
+
+    // ── Cost charts ───────────────────────────────────────────────────────
+    if (hasCost) {
+      document.getElementById('cost-section').style.display = 'block';
+
+      const costDatasets = modelNames.map((m, i) => ({
+        label: m,
+        data: LEVELS.map(c => {
+          const vals = rows
+            .filter(r => r.model_name === m && r.concurrency === c)
+            .map(r => r.cost_per_request_usd)
+            .filter(v => v != null && !isNaN(v) && v > 0);
+          return vals.length ? +pct(vals, 50).toFixed(7) : 0;
+        }),
+        backgroundColor: PALETTE[i % PALETTE.length].bg,
+        borderColor:     PALETTE[i % PALETTE.length].border,
+        borderWidth: 1.5,
+        borderRadius: 4,
+      }));
+
+      makeChart('chartCostReq', LEVELS.map(c => `c=${c}`), costDatasets, 'USD per request', false, {});
+    }
+
+    // ── Recommendation logic ──────────────────────────────────────────────
+    const passC10 = modelNames.filter(m => passes(m, 10));
+    const passC5  = modelNames.filter(m => passes(m, 5));
+    const pool = passC10.length ? passC10 : passC5.length ? passC5 : modelNames;
+    const recommended = [...pool].sort((a, b) =>
+      medCost(a, 'cost_per_request_usd') - medCost(b, 'cost_per_request_usd') ||
+      p99lat(a, 5) - p99lat(b, 5)
+    )[0];
+
+    // ── Recommendation table ──────────────────────────────────────────────
+    const tbody = document.getElementById('rec-tbody');
+    modelNames.forEach(m => {
+      const meta = MODEL_META[m] || { gpu: '—' };
+      const l1 = p99lat(m, 1), l5 = p99lat(m, 5), l10 = p99lat(m, 10);
+      const passesAll = passes(m, 1) && passes(m, 5) && passes(m, 10);
+      const passesAny = passes(m, 1) || passes(m, 5) || passes(m, 10);
+      const passLabel = passesAll ? 'PASS' : passesAny ? 'PARTIAL' : 'FAIL';
+      const passClass = passesAll ? 'pass' : passesAny ? 'partial' : 'fail';
+
+      const tr = document.createElement('tr');
+      if (m === recommended) tr.className = 'recommended';
+      tr.innerHTML = `
+        <td>${m}${m === recommended ? ' ★' : ''}</td>
+        <td>${meta.gpu}</td>
+        <td>${fmtMs(l1)}</td>
+        <td>${fmtMs(l5)}</td>
+        <td>${fmtMs(l10)}</td>
+        <td class="${passClass}">${passLabel}</td>
+        <td>${hasCost ? fmtCost(medCost(m, 'cost_per_request_usd')) : '—'}</td>
+        <td>${hasCost ? fmtCost(medCost(m, 'cost_per_1k_tokens_usd')) : '—'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // ── Key findings ──────────────────────────────────────────────────────
+    const findings = [];
+
+    // 1. Latency: which models reliably pass at every concurrency level
+    const strictPass = modelNames.filter(m => passes(m, 1) && passes(m, 5) && passes(m, 10));
+    if (strictPass.length > 0 && strictPass.length < modelNames.length) {
+      const failing = modelNames.filter(m => !strictPass.includes(m));
+      const closest = [...failing].sort((a, b) => p99lat(a, 1) - p99lat(b, 1))[0];
+      findings.push(
+        `${strictPass.join(' and ')} ${strictPass.length === 1 ? 'is the only model that reliably meets' : 'reliably meet'} the 700ms p99 target across all concurrency levels. ` +
+        `${closest} comes close at c=1 (${fmtMs(p99lat(closest, 1))}) but degrades to ${fmtMs(p99lat(closest, 10))} at c=10.`
+      );
+    } else if (strictPass.length === modelNames.length) {
+      findings.push(`All ${modelNames.length} models meet the 700ms p99 latency target at every concurrency level tested.`);
+    } else if (passC5.length > 0) {
+      findings.push(`${passC5.join(' and ')} meet the 700ms target at moderate load but degrade at peak concurrency. No model passes at every level tested.`);
+    } else {
+      const best = [...modelNames].sort((a, b) => p99lat(a, 1) - p99lat(b, 1))[0];
+      findings.push(`No model consistently meets the 700ms target. ${best} comes closest at ${fmtMs(p99lat(best, 1))} p99 at c=1.`);
+    }
+
+    // 2. Cost: raw difference between cheapest and most expensive
+    if (hasCost && modelNames.length > 1) {
+      const byCost = [...modelNames].sort((a, b) => medCost(a, 'cost_per_request_usd') - medCost(b, 'cost_per_request_usd'));
+      const cheapest = byCost[0];
+      const priciest = byCost[byCost.length - 1];
+      const ratio = medCost(priciest, 'cost_per_request_usd') / medCost(cheapest, 'cost_per_request_usd');
+      if (ratio > 2) {
+        findings.push(
+          `${priciest} costs ${ratio.toFixed(0)}× more per request than ${cheapest} — ` +
+          `${fmtCost(medCost(priciest, 'cost_per_request_usd'))} vs ${fmtCost(medCost(cheapest, 'cost_per_request_usd'))} (median at c=5).`
+        );
+      }
+    }
+
+    // 3. Trade-off: cost vs latency recommendation
+    if (hasCost && strictPass.length > 0 && strictPass.length < modelNames.length) {
+      const passModel = strictPass[0];
+      const cheaperAlts = modelNames
+        .filter(m => !strictPass.includes(m))
+        .filter(m => medCost(m, 'cost_per_request_usd') < medCost(passModel, 'cost_per_request_usd'))
+        .sort((a, b) => p99lat(a, 1) - p99lat(b, 1));
+      const closeAlt = cheaperAlts[0];
+      if (closeAlt) {
+        const altP99c1 = p99lat(closeAlt, 1);
+        const overByMs = Math.round((altP99c1 - TARGET_S) * 1000);
+        const costRatio = Math.round(medCost(passModel, 'cost_per_request_usd') / medCost(closeAlt, 'cost_per_request_usd'));
+        if (overByMs > 0) {
+          findings.push(
+            `${passModel} guarantees sub-700ms p99 at every load level, but at ${costRatio}× the cost of ${closeAlt}. ` +
+            `At scale, ${closeAlt}'s c=1 latency (${fmtMs(altP99c1)}) is only ${overByMs}ms over target — ` +
+            `multiple ${closeAlt} replicas behind a load balancer could match ${passModel}'s consistency at a fraction of the GPU spend.`
+          );
+        } else {
+          findings.push(
+            `${passModel} guarantees the target at ${costRatio}× the cost of ${closeAlt}. ` +
+            `At scale, horizontal scaling with ${closeAlt} replicas offers better unit economics.`
+          );
+        }
+      }
+    }
+
+    document.getElementById('findings-list').innerHTML =
+      findings.map(f => `<li>${f}</li>`).join('');
+  }
+
+  Papa.parse('../results/benchmark_results.csv', {
+    download: true,
+    header: true,
+    dynamicTyping: true,
+    complete({ data, errors }) {
+      if (errors.length) console.warn('Parse warnings:', errors);
+      const rows = data.filter(r => r.concurrency != null && r.total_latency_s != null);
+      if (!rows.length) {
+        showError('CSV loaded but contained no valid rows. Check the file path.');
+        return;
+      }
+      render(rows);
+    },
+    error(err) {
+      showError(`Failed to load benchmark_results.csv — ${err.message}. Serve over HTTP: python3 -m http.server 8080, then open http://localhost:8080/dashboard/`);
+    },
+  });
+
+  function showError(msg) {
+    const el = document.getElementById('error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+</script>
+</body>
+</html>
