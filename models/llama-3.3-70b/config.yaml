@@ -2,7 +2,7 @@ model_metadata:
   tags:
   - openai-compatible
 model_name: Llama-3.3-70B-Instruct
-python_version: py313
+python_version: py311
 resources:
   accelerator: H100:4
   cpu: '1'
