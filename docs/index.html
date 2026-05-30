@@ -61,20 +61,13 @@
       margin-bottom: 1.5rem;
     }
 
-    .findings h2, .chart-box h2, .chart-full h2, .table-box h2 {
+    .findings h2, .approach-box h2, .chart-box h2, .chart-full h2, .table-box h2 {
       font-size: 0.72rem;
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
       letter-spacing: 1px;
       margin-bottom: 1.25rem;
-    }
-
-    .findings-context {
-      font-size: 0.82rem;
-      color: #94a3b8;
-      margin-bottom: 1.1rem;
-      line-height: 1.5;
     }
 
     .findings ul {
@@ -99,6 +92,34 @@
       position: absolute;
       left: 0;
       top: 0.2rem;
+    }
+
+    /* ── Benchmarking approach box ── */
+    .approach-box {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem 2rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+      margin-bottom: 1.25rem;
+    }
+
+    .approach-box p {
+      font-size: 0.88rem;
+      color: #475569;
+      line-height: 1.65;
+    }
+
+    /* ── Per-model detail items (inside table-box, below the table) ── */
+    .model-detail-item {
+      font-size: 0.875rem;
+      color: #475569;
+      line-height: 1.6;
+      padding-left: 1rem;
+      border-left: 2px solid #e2e8f0;
+    }
+
+    .model-detail-item strong {
+      color: #1e293b;
     }
 
     /* ── Chart containers ── */
@@ -164,9 +185,6 @@
       white-space: nowrap;
     }
 
-    tr.recommended td { font-weight: 700; background: #f0fdf4; }
-    tr.recommended td:first-child { border-left: 3px solid #19E76E; }
-
     .pass    { color: #16a34a; font-weight: 700; }
     .partial { color: #d97706; font-weight: 700; }
     .fail    { color: #dc2626; font-weight: 700; }
@@ -193,10 +211,15 @@
 <main>
   <div id="error"></div>
 
+  <!-- Benchmarking approach — static summary of methodology -->
+  <div class="approach-box">
+    <h2>Benchmarking Approach</h2>
+    <p>Three TRT-LLM models self-deployed on Baseten — <strong>Qwen 2.5 3B</strong> (L4), <strong>Mistral 7B Instruct</strong> (L4), and <strong>Llama 3.3 70B</strong> (H100×4) — benchmarked across 882 requests: 14 prompts (5 short ~20 tokens, 5 medium ~50 tokens, 4 long ~100 tokens) × 7 repeats × 3 concurrency levels (c=1, 5, 10). Goal: identify which models hit a sub-700ms p99 total latency target for real-time voice dictation transcript cleanup.</p>
+  </div>
+
   <!-- Key findings — populated dynamically from benchmark_results.csv -->
   <div class="findings">
     <h2>Key Findings</h2>
-    <p class="findings-context">Three TRT-LLM models self-deployed on Baseten, benchmarked across 882 requests at three concurrency levels (c=1, 5, 10) to evaluate a sub-700ms p99 total latency target for real-time voice dictation transcript cleanup.</p>
     <ul id="findings-list"><li>Loading data…</li></ul>
   </div>
 
@@ -223,9 +246,9 @@
     </div>
   </div>
 
-  <!-- Full model comparison table — recommended model highlighted in green -->
+  <!-- Model comparison table + per-model detail -->
   <div class="table-box">
-    <h2>Model Comparison &amp; Recommendation</h2>
+    <h2>Model Comparison</h2>
     <table>
       <thead>
         <tr>
@@ -240,6 +263,9 @@
       </thead>
       <tbody id="rec-tbody"></tbody>
     </table>
+
+    <!-- Per-model detail — populated dynamically below the comparison table -->
+    <div id="model-details" style="display:flex; flex-direction:column; gap:0.75rem; margin-top:1.5rem;"></div>
   </div>
 </main>
 
@@ -498,26 +524,10 @@
       );
     }
 
-    /* ── Recommendation logic ────────────────────────────────────────────── */
-    /*
-     * Pick the recommended model:
-     *   1. Prefer models that pass the SLA at c=10 (highest tested load)
-     *   2. Fall back to c=5, then c=1
-     *   3. Among passing models, pick cheapest (lowest median cost at c=5)
-     *   4. If none pass, pick the model closest to the target
-     */
-    const passC10 = modelNames.filter(m => passes(m, 10));
-    const passC5  = modelNames.filter(m => passes(m, 5));
-    const pool = passC10.length ? passC10 : passC5.length ? passC5 : modelNames;
-    const recommended = [...pool].sort((a, b) =>
-      medCostAtC(a, 5) - medCostAtC(b, 5) || p99lat(a, 5) - p99lat(b, 5)
-    )[0];
-
     /* ── Model comparison table ──────────────────────────────────────────── */
     /*
-     * One row per model. Recommended model gets a green highlight and star.
-     * "Cost vs Qwen" column shows a relative multiplier (e.g. "~23×") rather
-     * than raw dollars — easier to reason about at a glance.
+     * One row per model. "Cost vs Qwen" column shows a relative multiplier
+     * (e.g. "~26×") rather than raw dollars — easier to reason about at a glance.
      */
     const tbody = document.getElementById('rec-tbody');
     modelNames.forEach(m => {
@@ -534,9 +544,8 @@
       const costCell = mult == null ? '—' : mult < 1.5 ? '1×' : `~${Math.round(mult)}×`;
 
       const tr = document.createElement('tr');
-      if (m === recommended) tr.className = 'recommended';
       tr.innerHTML = `
-        <td>${m}${m === recommended ? ' ★' : ''}</td>
+        <td>${m}</td>
         <td>${meta.gpu}</td>
         <td>${fmtMs(l1)}</td>
         <td>${fmtMs(l5)}</td>
@@ -547,86 +556,80 @@
       tbody.appendChild(tr);
     });
 
-    /* ── Key findings ────────────────────────────────────────────────────── */
-    /*
-     * Five findings, mirroring the README structure exactly:
-     *   1. Llama  — latency result + cost multiplier vs Qwen
-     *   2. Qwen   — latency degradation under load + 1× cost baseline
-     *   3. Mistral — architectural underperformance + cost penalty from slow requests
-     *   4. Cost trade-off — multiplier + horizontal-scaling alternative
-     *   5. Strategic note — Wispr Flow pricing, commoditization, SLA trade-off (static)
-     *
-     * Findings 1–4 are computed from the CSV. Finding 5 is editorial/static.
-     */
+    /* ── Key findings (2 bullets) ────────────────────────────────────────── */
     const findings = [];
+    const qwen    = modelNames.find(m => m.toLowerCase().includes('qwen'));
+    const llama   = modelNames.find(m => m.toLowerCase().includes('llama'));
+    const mistral = modelNames.find(m => m.toLowerCase().includes('mistral'));
 
-    const byCost   = hasCost ? [...modelNames].sort((a, b) => medCostAtC(a, 5) - medCostAtC(b, 5)) : modelNames;
-    const cheapest = byCost[0];                    // Qwen — 1× cost baseline
-    const priciest = byCost[byCost.length - 1];   // Llama
-
-    // 1. Llama — latency result and cost vs Qwen baseline
-    const llama = modelNames.find(m => m.toLowerCase().includes('llama'));
+    // 1. Headline: Llama is the only model approaching sub-700ms
     if (llama) {
       const l1 = p99lat(llama, 1), l5 = p99lat(llama, 5), l10 = p99lat(llama, 10);
-      const llamaRatio = hasCost ? Math.round(medCostAtC(llama, 5) / medCostAtC(cheapest, 5)) : null;
-      const costNote = llamaRatio ? ` At ~${llamaRatio}× the cost of ${cheapest} per request, it's the most expensive option.` : '';
+      const llamaRatio = (hasCost && qwen) ? Math.round(medCostAtC(llama, 5) / medCostAtC(qwen, 5)) : null;
+      const costNote = llamaRatio ? ` At ~${llamaRatio}× the cost of ${qwen}, it's the most expensive option by a wide margin.` : '';
       findings.push(
-        `<strong>${llama}</strong> is the closest to hitting the 700ms target — passes at c=5 ` +
+        `<strong>${llama}</strong> is the only model that approaches sub-700ms — passes at c=5 ` +
         `(${fmtMs(l5)} p99) but edges over at c=1 (${fmtMs(l1)}) and c=10 (${fmtMs(l10)}).${costNote}`
       );
     }
 
-    // 2. Qwen — competitive at low concurrency, degrades under load, cheapest baseline
-    const qwen = modelNames.find(m => m.toLowerCase().includes('qwen'));
-    if (qwen) {
-      const q1 = p99lat(qwen, 1), q10 = p99lat(qwen, 10);
-      findings.push(
-        `<strong>${qwen}</strong> is competitive at low concurrency (${fmtMs(q1)} p99 at c=1) ` +
-        `but degrades under load (${fmtMs(q10)} at c=10). Never clears the 700ms target but stays within striking distance. ` +
-        `The cheapest model tested — the 1× cost baseline everything else is measured against.`
-      );
-    }
-
-    // 3. Mistral — same GPU as Qwen but far slower; cost penalty explained by request duration
-    const mistral = modelNames.find(m => m.toLowerCase().includes('mistral'));
-    if (mistral && qwen) {
-      const mistralRatio = hasCost ? +(medCostAtC(mistral, 5) / medCostAtC(cheapest, 5)).toFixed(1) : null;
-      const costNote = mistralRatio
-        ? ` ~${mistralRatio}× the cost of ${qwen} per request, because each request takes ~${mistralRatio}× longer.`
-        : '';
-      findings.push(
-        `<strong>${mistral}</strong> runs on the same L4 GPU as ${qwen} at the same rate but costs${costNote} ` +
-        `P99 latency exceeds 6 seconds across all concurrency levels. ` +
-        `Model family and architecture matter more than parameter count.`
-      );
-    }
-
-    // 4. Cost trade-off — multiplier framing + horizontal scaling recommendation
-    if (hasCost && priciest !== cheapest) {
-      const ratio      = Math.round(medCostAtC(priciest, 5) / medCostAtC(cheapest, 5));
-      const latPenalty = Math.round(((p99lat(cheapest, 5) - p99lat(priciest, 5)) / p99lat(priciest, 5)) * 100);
-      if (ratio > 2) {
-        findings.push(
-          `<strong>Cost trade-off:</strong> at ~${ratio}× lower cost, ${cheapest}'s latency penalty vs ${priciest} ` +
-          `is only ~${latPenalty}% at c=5 (${fmtMs(p99lat(cheapest, 5))} vs ${fmtMs(p99lat(priciest, 5))}). ` +
-          `At scale, multiple ${cheapest} replicas behind a load balancer could match ${priciest}'s throughput at a fraction of the GPU spend.`
-        );
-      }
-    }
-
-    // 5. Strategic note — static finding about market context and SLA trade-off
-    const llamaRatioFinal = (hasCost && cheapest && priciest)
-      ? Math.round(medCostAtC(priciest, 5) / medCostAtC(cheapest, 5))
+    // 2. Strategic note — Wispr Flow market context and SLA trade-off
+    const llamaRatioFinal = (hasCost && qwen && llama)
+      ? Math.round(medCostAtC(llama, 5) / medCostAtC(qwen, 5))
       : 26;
     findings.push(
       `<strong>Worth considering:</strong> at $15/month, Wispr Flow is priced at a premium in a market ` +
       `where dictation is increasingly commoditized — Claude, Gemini, and ChatGPT now bundle voice input natively. ` +
-      `If the SLA were relaxed from sub-700ms to sub-1s, ${cheapest || 'the cheaper model'} becomes viable at ` +
+      `If the SLA were relaxed from sub-700ms to sub-1s, ${qwen || 'the cheaper model'} becomes viable at ` +
       `~${llamaRatioFinal}× lower cost — a meaningful lever worth evaluating as the category matures.`
     );
 
     document.getElementById('findings-list').innerHTML =
       findings.map(f => `<li>${f}</li>`).join('');
+
+    /* ── Per-model detail (below comparison table) ────────────────────────── */
+    const detailItems = [];
+
+    if (llama) {
+      const l1 = p99lat(llama, 1), l5 = p99lat(llama, 5), l10 = p99lat(llama, 10);
+      const llamaRatio = (hasCost && qwen) ? Math.round(medCostAtC(llama, 5) / medCostAtC(qwen, 5)) : null;
+      const costNote = llamaRatio ? ` At ~${llamaRatio}× the cost of ${qwen} per request, it's the most expensive option.` : '';
+      detailItems.push(
+        `<strong>${llama}:</strong> closest to the 700ms target — passes at c=5 (${fmtMs(l5)} p99) ` +
+        `but edges over at c=1 (${fmtMs(l1)}) and c=10 (${fmtMs(l10)}).${costNote}`
+      );
+    }
+
+    if (qwen) {
+      const q1 = p99lat(qwen, 1), q5 = p99lat(qwen, 5), q10 = p99lat(qwen, 10);
+      const qRatio = (hasCost && llama) ? Math.round(medCostAtC(llama, 5) / medCostAtC(qwen, 5)) : null;
+      const scaleNote = qRatio
+        ? ` At ~${qRatio}× lower cost, multiple replicas behind a load balancer could match Llama's throughput at a fraction of the GPU spend.`
+        : '';
+      detailItems.push(
+        `<strong>${qwen}:</strong> competitive at low concurrency (${fmtMs(q1)} p99 at c=1) but degrades under load ` +
+        `(${fmtMs(q10)} at c=10). Never clears the 700ms target but stays within striking distance — the cheapest model tested, ` +
+        `the 1× cost baseline everything else is measured against.${scaleNote}`
+      );
+    }
+
+    if (mistral && qwen) {
+      const mistralRatio = hasCost ? +(medCostAtC(mistral, 5) / medCostAtC(qwen, 5)).toFixed(1) : null;
+      const costNote = mistralRatio
+        ? ` ~${mistralRatio}× the cost of ${qwen} per request, because each request takes ~${mistralRatio}× longer.`
+        : '';
+      detailItems.push(
+        `<strong>${mistral}:</strong> runs on the same L4 GPU as ${qwen} at the same rate but costs${costNote} ` +
+        `P99 latency exceeds 6s across all concurrency levels. Model architecture matters more than parameter count.`
+      );
+    }
+
+    const detailEl = document.getElementById('model-details');
+    if (detailEl && detailItems.length) {
+      detailEl.innerHTML = detailItems
+        .map(d => `<div class="model-detail-item">${d}</div>`)
+        .join('');
+    }
   }
 
   /* ── CSV loading ─────────────────────────────────────────────────────────── */
