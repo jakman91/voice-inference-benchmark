@@ -1,3 +1,14 @@
+# Baseten Engine Builder config for Qwen 2.5 3B Instruct
+#
+# Deploy with:  cd models/qwen-2.5-3b && truss push
+#
+# Engine Builder compiles the model to TensorRT-LLM format at deploy time —
+# no custom Python code required. The resulting endpoint is OpenAI-compatible
+# (POST /chat/completions with an "Api-Key" Authorization header).
+#
+# GPU: L4 — cost $0.01414/min
+# Quantization: fp8 — halves memory vs fp16, minimal quality loss for this task
+
 model_metadata:
   tags:
     - openai-compatible
@@ -11,6 +22,6 @@ trt_llm:
     checkpoint_repository:
       source: HF
       repo: Qwen/Qwen2.5-3B-Instruct
-    max_seq_len: 8192
+    max_seq_len: 8192        # max input + output tokens; 8K is well beyond our benchmark prompts
     quantization_type: fp8
-    tensor_parallel_count: 1
+    tensor_parallel_count: 1 # single L4 GPU — no tensor parallelism needed at 3B params

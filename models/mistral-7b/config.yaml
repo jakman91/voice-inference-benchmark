@@ -1,3 +1,14 @@
+# Baseten Engine Builder config for Mistral 7B Instruct v0.3
+#
+# Deploy with:  cd models/mistral-7b && truss push
+#
+# Same GPU tier as Qwen (L4, $0.01414/min), same quantization — direct apples-to-apples
+# comparison. Mistral underperformed Qwen in benchmarking despite 2× the parameters,
+# demonstrating that model architecture matters as much as size.
+#
+# GPU: L4 — cost $0.01414/min
+# Quantization: fp8
+
 model_metadata:
   tags:
   - openai-compatible
@@ -15,6 +26,6 @@ trt_llm:
       repo: mistralai/Mistral-7B-Instruct-v0.3
       source: HF
     max_seq_len: 8192
-    num_builder_gpus: 2
+    num_builder_gpus: 2      # use 2 GPUs during the TRT-LLM compilation step (not inference)
     quantization_type: fp8
-    tensor_parallel_count: 1
+    tensor_parallel_count: 1 # single L4 GPU at inference time

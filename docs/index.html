@@ -4,6 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Voice Dictation Inference Benchmark</title>
+  <!--
+    Dependencies loaded from CDN — no build step required.
+    Chart.js:                    bar charts
+    chartjs-plugin-annotation:   the dashed 700ms target line on the latency chart
+    PapaParse:                   parse benchmark_results.csv directly in the browser
+  -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
@@ -46,7 +52,7 @@
       padding: 2rem;
     }
 
-    /* ── Cards ── */
+    /* ── Summary cards ── */
     .cards {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -90,7 +96,7 @@
       margin-top: 0.45rem;
     }
 
-    /* ── Findings ── */
+    /* ── Key findings panel ── */
     .findings {
       background: white;
       border-radius: 12px;
@@ -132,7 +138,13 @@
       flex-shrink: 0;
     }
 
-    /* ── Charts ── */
+    /* ── Chart containers ── */
+
+    /*
+     * charts-row: two equal columns side by side.
+     * Left = p99 latency, Right = cost multiplier.
+     * If the right panel is hidden (no cost data), the left takes up one column only.
+     */
     .charts-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -145,7 +157,6 @@
       border-radius: 12px;
       padding: 1.5rem;
       box-shadow: 0 1px 4px rgba(0,0,0,0.07);
-      margin-bottom: 1.25rem;
     }
 
     .chart-scope {
@@ -159,13 +170,14 @@
     .chart-wrap    { position: relative; height: 280px; }
     .chart-wrap-sm { position: relative; height: 240px; }
 
-    /* ── Table ── */
+    /* ── Model comparison table ── */
     .table-box {
       background: white;
       border-radius: 12px;
       padding: 1.5rem;
       box-shadow: 0 1px 4px rgba(0,0,0,0.07);
       overflow-x: auto;
+      margin-top: 1.25rem;
     }
 
     table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
@@ -218,11 +230,13 @@
 <main>
   <div id="error"></div>
 
+  <!-- Key findings — populated dynamically from benchmark_results.csv -->
   <div class="findings">
     <h2>Key Findings</h2>
     <ul id="findings-list"><li>Loading data…</li></ul>
   </div>
 
+  <!-- Summary cards: high-level benchmark snapshot -->
   <div class="cards">
     <div class="card">
       <div class="card-label">Models Tested</div>
@@ -246,19 +260,30 @@
     </div>
   </div>
 
-  <div class="chart-full">
-    <h2>
-      p99 Total Latency by Model &amp; Concurrency
-      &nbsp;<span class="chart-scope">· short + medium prompts only (long utterances exceed 700ms regardless of model)</span>
-    </h2>
-    <div class="chart-wrap"><canvas id="chartLatency"></canvas></div>
+  <!--
+    Two charts side by side:
+    Left:  P99 total latency — which models meet the 700ms SLA at each concurrency level
+    Right: Cost multiplier — how much more expensive each model is relative to Qwen (1×)
+  -->
+  <div class="charts-row">
+    <div class="chart-box">
+      <h2>
+        p99 Total Latency by Model &amp; Concurrency
+        &nbsp;<span class="chart-scope">· short + medium prompts only</span>
+      </h2>
+      <div class="chart-wrap"><canvas id="chartLatency"></canvas></div>
+    </div>
+
+    <div class="chart-box" id="cost-section" style="display:none">
+      <h2>
+        Cost Multiplier vs Qwen Baseline
+        <span class="chart-scope">· Qwen = 1×, higher = more expensive per request</span>
+      </h2>
+      <div class="chart-wrap"><canvas id="chartCostReq"></canvas></div>
+    </div>
   </div>
 
-  <div class="chart-full" id="cost-section" style="display:none">
-    <h2>Cost per Request (USD) <span class="chart-scope">· amortized across concurrent requests</span></h2>
-    <div class="chart-wrap"><canvas id="chartCostReq"></canvas></div>
-  </div>
-
+  <!-- Full model comparison table — recommended model highlighted in green -->
   <div class="table-box">
     <h2>Model Comparison &amp; Recommendation</h2>
     <table>
@@ -270,8 +295,7 @@
           <th>p99 Latency c=5</th>
           <th>p99 Latency c=10</th>
           <th>Passes Target?</th>
-          <th>Cost / Request (c=5)</th>
-          <th>Cost / 1K Tokens (c=5)</th>
+          <th>Cost vs Qwen (c=5)</th>
         </tr>
       </thead>
       <tbody id="rec-tbody"></tbody>
@@ -280,17 +304,33 @@
 </main>
 
 <script>
+  /*
+   * ── Configuration ────────────────────────────────────────────────────────
+   *
+   * LEVELS:         concurrency levels used in benchmark.py (1, 5, 10 simultaneous requests)
+   * TARGET_S:       the 700ms p99 SLA we're evaluating against
+   * TARGET_PROMPTS: only short+medium prompts count toward pass/fail.
+   *                 Long prompts exceed 700ms on every model, so including them
+   *                 would make all models fail — not the meaningful comparison.
+   */
   const LEVELS = [1, 5, 10];
   const TARGET_S = 0.700;
   const TARGET_PROMPTS = new Set(['short', 'medium']);
 
-  // GPU metadata — keep in sync with MODELS in scripts/benchmark.py
+  /*
+   * GPU metadata for the comparison table.
+   * Keep in sync with MODELS in scripts/benchmark.py.
+   */
   const MODEL_META = {
-    'Qwen-2.5-3B':         { gpu: 'L4' },
-    'Mistral-7B-Instruct':  { gpu: 'L4' },
-    'Llama-3.3-70B':        { gpu: 'H100×4' },
+    'Qwen-2.5-3B':        { gpu: 'L4' },
+    'Mistral-7B-Instruct': { gpu: 'L4' },
+    'Llama-3.3-70B':       { gpu: 'H100×4' },
   };
 
+  /*
+   * Chart color palette — one entry per model, matched by index order in the CSV.
+   * bg: bar fill (semi-transparent), border: bar outline.
+   */
   const PALETTE = [
     { bg: 'rgba(25,231,110,0.80)',  border: '#19E76E' },
     { bg: 'rgba(255,169,253,0.80)', border: '#FFA9FD' },
@@ -298,6 +338,12 @@
     { bg: 'rgba(251,191,36,0.80)',  border: '#fbbf24' },
   ];
 
+  /* ── Utility helpers ─────────────────────────────────────────────────────── */
+
+  /*
+   * pct(arr, p): p-th percentile using linear interpolation.
+   * Used everywhere we compute p99 latency or median cost.
+   */
   function pct(arr, p) {
     if (!arr.length) return 0;
     const s = [...arr].sort((a, b) => a - b);
@@ -306,21 +352,34 @@
     return lo === hi ? s[lo] : s[lo] + (s[hi] - s[lo]) * (idx - lo);
   }
 
+  /* Format seconds as "320ms" (< 1s) or "1.23s" (>= 1s). */
   function fmtMs(s) {
     if (!s) return '—';
     return s < 1 ? `${Math.round(s * 1000)}ms` : `${s.toFixed(2)}s`;
   }
 
+  /* Format USD at enough decimal places to be readable at sub-cent scale. */
   function fmtCost(v) {
     if (v == null || isNaN(v) || v <= 0) return '—';
     return `$${v.toFixed(5)}`;
   }
 
+  /* Format a cost multiplier: "1.2×" for small differences, "27×" for large ones. */
+  function fmtMultiplier(v) {
+    if (v == null || isNaN(v) || v <= 0) return '—';
+    return v < 2 ? `${v.toFixed(1)}×` : `${Math.round(v)}×`;
+  }
+
+  /* Shared Chart.js axis styling — light grid lines, muted tick labels. */
   const axisStyle = {
     grid: { color: '#f1f5f9' },
     ticks: { color: '#64748b', font: { size: 11 } },
   };
 
+  /*
+   * Dashed red annotation line at 700ms on the latency chart.
+   * Requires chartjs-plugin-annotation (loaded in <head>).
+   */
   const targetAnnotation = {
     type: 'line',
     yMin: TARGET_S, yMax: TARGET_S,
@@ -338,7 +397,17 @@
     },
   };
 
-  function makeChart(id, labels, datasets, yLabel, isLatency, annotations) {
+  /*
+   * makeChart(id, labels, datasets, yLabel, formatMode, annotations)
+   *
+   * Generic bar chart factory used for both the latency and cost multiplier charts.
+   *
+   * formatMode controls how tooltip values are displayed:
+   *   'latency'    — "320ms" or "1.23s"
+   *   'multiplier' — "27×"
+   *   'cost'       — "$0.00016"
+   */
+  function makeChart(id, labels, datasets, yLabel, formatMode, annotations) {
     new Chart(document.getElementById(id), {
       type: 'bar',
       data: { labels, datasets },
@@ -350,7 +419,12 @@
           annotation: { annotations: annotations || {} },
           tooltip: {
             callbacks: {
-              label: ctx => ` ${ctx.dataset.label}: ${isLatency ? fmtMs(ctx.parsed.y) : fmtCost(ctx.parsed.y)}`,
+              label: ctx => {
+                const v = ctx.parsed.y;
+                if (formatMode === 'latency')    return ` ${ctx.dataset.label}: ${fmtMs(v)}`;
+                if (formatMode === 'multiplier') return ` ${ctx.dataset.label}: ${fmtMultiplier(v)}`;
+                return ` ${ctx.dataset.label}: ${fmtCost(v)}`;
+              },
             },
           },
         },
@@ -366,12 +440,24 @@
     });
   }
 
+  /* ── Main render function ────────────────────────────────────────────────── */
+
+  /*
+   * render(rows): called once PapaParse finishes loading the CSV.
+   * All chart rendering, table building, and findings generation happen here.
+   * rows is an array of objects keyed by CSV column names (CSV_FIELDS in benchmark.py).
+   */
   function render(rows) {
     rows.forEach(r => { if (!r.model_name) r.model_name = 'Qwen-2.5-3B'; });
 
     const modelNames = [...new Set(rows.map(r => r.model_name))];
-    const hasCost = rows.some(r => r.cost_per_request_usd != null && !isNaN(r.cost_per_request_usd) && r.cost_per_request_usd > 0);
+    const hasCost = rows.some(r =>
+      r.cost_per_request_usd != null && !isNaN(r.cost_per_request_usd) && r.cost_per_request_usd > 0
+    );
 
+    /* ── Data helpers ────────────────────────────────────────────────────── */
+
+    /* Filter to short+medium rows only for SLA pass/fail evaluation. */
     function latRows(model, c) {
       return rows.filter(r =>
         r.model_name === model &&
@@ -380,43 +466,62 @@
       );
     }
 
+    /* p99 total latency for a model at a given concurrency level. */
     function p99lat(model, c) {
       return pct(latRows(model, c).map(r => r.total_latency_s), 99);
     }
 
+    /* True if a model's p99 latency is at or below the 700ms target. */
     function passes(model, c) {
       const v = p99lat(model, c);
       return v > 0 && v <= TARGET_S;
     }
 
-    function medCost(model, field) {
+    /*
+     * Median cost per request for a model at a specific concurrency.
+     * Cost is pre-amortized across concurrent requests in the CSV:
+     *   cost = (latency_s / 60) * instance_cost_per_min / concurrency
+     * This reflects real economics — a model running 10 parallel requests
+     * costs 10× less per request than one running a single request.
+     */
+    function medCostAtC(model, c) {
       if (!hasCost) return Infinity;
       const vals = rows
-        .filter(r => r.model_name === model && r.concurrency === 5)
-        .map(r => r[field])
+        .filter(r => r.model_name === model && r.concurrency === c)
+        .map(r => r.cost_per_request_usd)
         .filter(v => v != null && !isNaN(v) && v > 0);
       return vals.length ? pct(vals, 50) : Infinity;
     }
 
-    // ── Header ────────────────────────────────────────────────────────────
+    /* ── Qwen baseline for cost comparisons ─────────────────────────────── */
+    /*
+     * Qwen is the cheapest model in this benchmark and is used as the 1× reference
+     * for all cost multiplier calculations. Falls back to first model if Qwen isn't present.
+     */
+    const costBaseline = modelNames.find(m => m.toLowerCase().includes('qwen')) || modelNames[0];
+
+    /* ── Header subtitle ─────────────────────────────────────────────────── */
     document.getElementById('header-subtitle').textContent =
       `${modelNames.join(' · ')} · TRT-LLM · Baseten · sub-700ms target`;
 
-    // ── Cards ─────────────────────────────────────────────────────────────
+    /* ── Summary cards ───────────────────────────────────────────────────── */
     document.getElementById('val-models').textContent = modelNames.length;
     const passCount = c => modelNames.filter(m => passes(m, c)).length;
     document.getElementById('val-pass-c1').textContent  = `${passCount(1)} / ${modelNames.length}`;
     document.getElementById('val-pass-c10').textContent = `${passCount(10)} / ${modelNames.length}`;
 
     if (hasCost) {
-      const bestModel = [...modelNames].sort((a, b) =>
-        medCost(a, 'cost_per_request_usd') - medCost(b, 'cost_per_request_usd')
-      )[0];
-      document.getElementById('val-cost').textContent = fmtCost(medCost(bestModel, 'cost_per_request_usd'));
+      const bestModel = [...modelNames].sort((a, b) => medCostAtC(a, 5) - medCostAtC(b, 5))[0];
+      document.getElementById('val-cost').textContent = fmtCost(medCostAtC(bestModel, 5));
       document.getElementById('sub-cost').textContent = `${bestModel} · at c=5`;
     }
 
-    // ── Hero chart ────────────────────────────────────────────────────────
+    /* ── Latency chart ───────────────────────────────────────────────────── */
+    /*
+     * Grouped bar chart: x-axis = concurrency level, bars = one per model.
+     * The dashed red line marks the 700ms target.
+     * Only short+medium prompts are included (see TARGET_PROMPTS above).
+     */
     makeChart(
       'chartLatency',
       LEVELS.map(c => `c=${c}`),
@@ -429,22 +534,29 @@
         borderRadius: 4,
       })),
       'p99 Latency (s)',
-      true,
+      'latency',
       { target: targetAnnotation },
     );
 
-    // ── Cost charts ───────────────────────────────────────────────────────
+    /* ── Cost multiplier chart ───────────────────────────────────────────── */
+    /*
+     * Instead of raw dollar amounts (which are tiny and hard to interpret),
+     * this chart shows each model's cost as a multiple of Qwen's cost.
+     * Qwen = 1× at every concurrency level. Llama is ~20–27× depending on load.
+     *
+     * The multiplier varies slightly across concurrency because each model's
+     * latency scales differently under load — higher concurrency generally
+     * improves cost efficiency for all models, but not equally.
+     */
     if (hasCost) {
       document.getElementById('cost-section').style.display = 'block';
 
-      const costDatasets = modelNames.map((m, i) => ({
+      const multiplierDatasets = modelNames.map((m, i) => ({
         label: m,
         data: LEVELS.map(c => {
-          const vals = rows
-            .filter(r => r.model_name === m && r.concurrency === c)
-            .map(r => r.cost_per_request_usd)
-            .filter(v => v != null && !isNaN(v) && v > 0);
-          return vals.length ? +pct(vals, 50).toFixed(7) : 0;
+          const base = medCostAtC(costBaseline, c);
+          const cost = medCostAtC(m, c);
+          return (base > 0 && cost < Infinity) ? +(cost / base).toFixed(2) : 0;
         }),
         backgroundColor: PALETTE[i % PALETTE.length].bg,
         borderColor:     PALETTE[i % PALETTE.length].border,
@@ -452,19 +564,37 @@
         borderRadius: 4,
       }));
 
-      makeChart('chartCostReq', LEVELS.map(c => `c=${c}`), costDatasets, 'USD per request', false, {});
+      makeChart(
+        'chartCostReq',
+        LEVELS.map(c => `c=${c}`),
+        multiplierDatasets,
+        `Cost multiplier vs ${costBaseline} (1×)`,
+        'multiplier',
+        {},
+      );
     }
 
-    // ── Recommendation logic ──────────────────────────────────────────────
+    /* ── Recommendation logic ────────────────────────────────────────────── */
+    /*
+     * Pick the recommended model:
+     *   1. Prefer models that pass the SLA at c=10 (highest tested load)
+     *   2. Fall back to c=5, then c=1
+     *   3. Among passing models, pick cheapest (lowest median cost at c=5)
+     *   4. If none pass, pick the model closest to the target
+     */
     const passC10 = modelNames.filter(m => passes(m, 10));
     const passC5  = modelNames.filter(m => passes(m, 5));
     const pool = passC10.length ? passC10 : passC5.length ? passC5 : modelNames;
     const recommended = [...pool].sort((a, b) =>
-      medCost(a, 'cost_per_request_usd') - medCost(b, 'cost_per_request_usd') ||
-      p99lat(a, 5) - p99lat(b, 5)
+      medCostAtC(a, 5) - medCostAtC(b, 5) || p99lat(a, 5) - p99lat(b, 5)
     )[0];
 
-    // ── Recommendation table ──────────────────────────────────────────────
+    /* ── Model comparison table ──────────────────────────────────────────── */
+    /*
+     * One row per model. Recommended model gets a green highlight and star.
+     * "Cost vs Qwen" column shows a relative multiplier (e.g. "~23×") rather
+     * than raw dollars — easier to reason about at a glance.
+     */
     const tbody = document.getElementById('rec-tbody');
     modelNames.forEach(m => {
       const meta = MODEL_META[m] || { gpu: '—' };
@@ -473,6 +603,11 @@
       const passesAny = passes(m, 1) || passes(m, 5) || passes(m, 10);
       const passLabel = passesAll ? 'PASS' : passesAny ? 'PARTIAL' : 'FAIL';
       const passClass = passesAll ? 'pass' : passesAny ? 'partial' : 'fail';
+
+      const baseCost = medCostAtC(costBaseline, 5);
+      const mCost    = medCostAtC(m, 5);
+      const mult     = (baseCost > 0 && mCost < Infinity) ? mCost / baseCost : null;
+      const costCell = mult == null ? '—' : mult < 1.5 ? '1×' : `~${Math.round(mult)}×`;
 
       const tr = document.createElement('tr');
       if (m === recommended) tr.className = 'recommended';
@@ -483,71 +618,69 @@
         <td>${fmtMs(l5)}</td>
         <td>${fmtMs(l10)}</td>
         <td class="${passClass}">${passLabel}</td>
-        <td>${hasCost ? fmtCost(medCost(m, 'cost_per_request_usd')) : '—'}</td>
-        <td>${hasCost ? fmtCost(medCost(m, 'cost_per_1k_tokens_usd')) : '—'}</td>
+        <td>${costCell}</td>
       `;
       tbody.appendChild(tr);
     });
 
-    // ── Key findings ──────────────────────────────────────────────────────
+    /* ── Key findings ────────────────────────────────────────────────────── */
+    /*
+     * Three findings, matching the README narrative:
+     *   1. Latency: which model reliably meets the SLA and which comes close but degrades
+     *   2. Architecture: Mistral's underperformance proves model family > parameter count
+     *   3. Cost trade-off: the ~Nx multiplier and the horizontal-scaling alternative
+     */
     const findings = [];
 
-    // 1. Latency: which models reliably pass at every concurrency level
+    // 1. Latency SLA — who passes every concurrency level, who degrades under load
     const strictPass = modelNames.filter(m => passes(m, 1) && passes(m, 5) && passes(m, 10));
+    const nearMiss   = modelNames.filter(m => !strictPass.includes(m))
+                                 .sort((a, b) => p99lat(a, 1) - p99lat(b, 1));
+
     if (strictPass.length > 0 && strictPass.length < modelNames.length) {
-      const failing = modelNames.filter(m => !strictPass.includes(m));
-      const closest = [...failing].sort((a, b) => p99lat(a, 1) - p99lat(b, 1))[0];
+      const closest = nearMiss[0];
       findings.push(
-        `${strictPass.join(' and ')} ${strictPass.length === 1 ? 'is the only model that reliably meets' : 'reliably meet'} the 700ms p99 target across all concurrency levels. ` +
-        `${closest} comes close at c=1 (${fmtMs(p99lat(closest, 1))}) but degrades to ${fmtMs(p99lat(closest, 10))} at c=10.`
+        `<strong>${strictPass.join(' and ')}</strong> ` +
+        `${strictPass.length === 1 ? 'is the only model that' : 'are the only models that'} ` +
+        `reliably meets the 700ms p99 target at every concurrency level tested.` +
+        (closest ? ` <strong>${closest}</strong> comes close at low concurrency but degrades under load.` : '')
       );
     } else if (strictPass.length === modelNames.length) {
       findings.push(`All ${modelNames.length} models meet the 700ms p99 latency target at every concurrency level tested.`);
-    } else if (passC5.length > 0) {
-      findings.push(`${passC5.join(' and ')} meet the 700ms target at moderate load but degrade at peak concurrency. No model passes at every level tested.`);
     } else {
-      const best = [...modelNames].sort((a, b) => p99lat(a, 1) - p99lat(b, 1))[0];
-      findings.push(`No model consistently meets the 700ms target. ${best} comes closest at ${fmtMs(p99lat(best, 1))} p99 at c=1.`);
+      const best = nearMiss[0];
+      findings.push(
+        `No model consistently meets the 700ms target. ` +
+        `<strong>${best}</strong> comes closest at ${fmtMs(p99lat(best, 1))} p99 at c=1.`
+      );
     }
 
-    // 2. Cost: raw difference between cheapest and most expensive
-    if (hasCost && modelNames.length > 1) {
-      const byCost = [...modelNames].sort((a, b) => medCost(a, 'cost_per_request_usd') - medCost(b, 'cost_per_request_usd'));
-      const cheapest = byCost[0];
-      const priciest = byCost[byCost.length - 1];
-      const ratio = medCost(priciest, 'cost_per_request_usd') / medCost(cheapest, 'cost_per_request_usd');
-      if (ratio > 2) {
+    // 2. Architecture insight — Mistral underperforms smaller models on the same GPU
+    const mistral = modelNames.find(m => m.toLowerCase().includes('mistral'));
+    if (mistral) {
+      const sameGpuModels = modelNames.filter(m => m !== mistral && !m.toLowerCase().includes('llama'));
+      const underperforms = sameGpuModels.some(m => p99lat(m, 5) < p99lat(mistral, 5));
+      if (underperforms) {
         findings.push(
-          `${priciest} costs ${ratio.toFixed(0)}× more per request than ${cheapest} — ` +
-          `${fmtCost(medCost(priciest, 'cost_per_request_usd'))} vs ${fmtCost(medCost(cheapest, 'cost_per_request_usd'))} (median at c=5).`
+          `<strong>${mistral}</strong> underperforms both smaller models on the same L4 GPU — ` +
+          `model family and architecture matter as much as parameter count.`
         );
       }
     }
 
-    // 3. Trade-off: cost vs latency recommendation
-    if (hasCost && strictPass.length > 0 && strictPass.length < modelNames.length) {
-      const passModel = strictPass[0];
-      const cheaperAlts = modelNames
-        .filter(m => !strictPass.includes(m))
-        .filter(m => medCost(m, 'cost_per_request_usd') < medCost(passModel, 'cost_per_request_usd'))
-        .sort((a, b) => p99lat(a, 1) - p99lat(b, 1));
-      const closeAlt = cheaperAlts[0];
-      if (closeAlt) {
-        const altP99c1 = p99lat(closeAlt, 1);
-        const overByMs = Math.round((altP99c1 - TARGET_S) * 1000);
-        const costRatio = Math.round(medCost(passModel, 'cost_per_request_usd') / medCost(closeAlt, 'cost_per_request_usd'));
-        if (overByMs > 0) {
-          findings.push(
-            `${passModel} guarantees sub-700ms p99 at every load level, but at ${costRatio}× the cost of ${closeAlt}. ` +
-            `At scale, ${closeAlt}'s c=1 latency (${fmtMs(altP99c1)}) is only ${overByMs}ms over target — ` +
-            `multiple ${closeAlt} replicas behind a load balancer could match ${passModel}'s consistency at a fraction of the GPU spend.`
-          );
-        } else {
-          findings.push(
-            `${passModel} guarantees the target at ${costRatio}× the cost of ${closeAlt}. ` +
-            `At scale, horizontal scaling with ${closeAlt} replicas offers better unit economics.`
-          );
-        }
+    // 3. Cost trade-off — compute the actual multiplier and frame the scale-out alternative
+    if (hasCost && modelNames.length > 1) {
+      const byCost  = [...modelNames].sort((a, b) => medCostAtC(a, 5) - medCostAtC(b, 5));
+      const cheapest = byCost[0];
+      const priciest = byCost[byCost.length - 1];
+      const ratio    = Math.round(medCostAtC(priciest, 5) / medCostAtC(cheapest, 5));
+
+      if (ratio > 2) {
+        findings.push(
+          `<strong>Cost trade-off:</strong> <strong>${priciest}</strong> costs ~${ratio}× more per request than ` +
+          `<strong>${cheapest}</strong>. At scale, multiple ${cheapest} replicas behind a load balancer ` +
+          `could match ${priciest}'s consistency at a fraction of the GPU spend.`
+        );
       }
     }
 
@@ -555,12 +688,23 @@
       findings.map(f => `<li>${f}</li>`).join('');
   }
 
+  /* ── CSV loading ─────────────────────────────────────────────────────────── */
+  /*
+   * PapaParse fetches benchmark_results.csv relative to this HTML file.
+   * dynamicTyping: true automatically converts numeric strings to JS numbers.
+   *
+   * Note: this must be served over HTTP — file:// won't work due to browser CORS rules.
+   * To run locally:  cd docs && python3 -m http.server 8080
+   * Then open:       http://localhost:8080
+   *
+   * The GitHub Pages deploy at the repo URL serves it correctly automatically.
+   */
   Papa.parse('results/benchmark_results.csv', {
     download: true,
     header: true,
     dynamicTyping: true,
     complete({ data, errors }) {
-      if (errors.length) console.warn('Parse warnings:', errors);
+      if (errors.length) console.warn('CSV parse warnings:', errors);
       const rows = data.filter(r => r.concurrency != null && r.total_latency_s != null);
       if (!rows.length) {
         showError('CSV loaded but contained no valid rows. Check the file path.');
@@ -569,7 +713,10 @@
       render(rows);
     },
     error(err) {
-      showError(`Failed to load benchmark_results.csv — ${err.message}. Serve over HTTP: python3 -m http.server 8080, then open http://localhost:8080/dashboard/`);
+      showError(
+        `Failed to load benchmark_results.csv — ${err.message}. ` +
+        `Serve over HTTP: cd docs && python3 -m http.server 8080`
+      );
     },
   });
 

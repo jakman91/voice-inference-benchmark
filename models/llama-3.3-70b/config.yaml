@@ -1,3 +1,15 @@
+# Baseten Engine Builder config for Llama 3.3 70B Instruct
+#
+# Deploy with:  cd models/llama-3.3-70b && truss push
+#
+# Llama 3.3 70B is a gated model on Hugging Face. Before pushing:
+#   1. Accept Meta's license at huggingface.co/meta-llama/Llama-3.3-70B-Instruct
+#   2. Add your HF token to Baseten secrets as "hf_access_token"
+#
+# GPU: H100×4 — cost $0.43333/min (~30× more than L4)
+# Requires 4× H100s for tensor parallelism (70B parameters don't fit in one GPU's VRAM)
+# Quantization: fp8_kv — fp8 weights + fp8 KV cache, optimized for TRT-LLM on H100
+
 model_metadata:
   tags:
   - openai-compatible
@@ -13,10 +25,10 @@ trt_llm:
     base_model: decoder
     checkpoint_repository:
       repo: meta-llama/Llama-3.3-70B-Instruct
-      runtime_secret_name: hf_access_token
+      runtime_secret_name: hf_access_token  # Baseten secret storing your HF token
       source: HF
     max_seq_len: 8192
     quantization_type: fp8_kv
-    tensor_parallel_count: 4
+    tensor_parallel_count: 4  # split model across all 4 H100s
   runtime:
     served_model_name: Llama-3.3-70B-Instruct
