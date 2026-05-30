@@ -625,64 +625,81 @@
 
     /* ── Key findings ────────────────────────────────────────────────────── */
     /*
-     * Three findings, matching the README narrative:
-     *   1. Latency: which model reliably meets the SLA and which comes close but degrades
-     *   2. Architecture: Mistral's underperformance proves model family > parameter count
-     *   3. Cost trade-off: the ~Nx multiplier and the horizontal-scaling alternative
+     * Five findings, mirroring the README structure exactly:
+     *   1. Llama  — latency result + cost multiplier vs Qwen
+     *   2. Qwen   — latency degradation under load + 1× cost baseline
+     *   3. Mistral — architectural underperformance + cost penalty from slow requests
+     *   4. Cost trade-off — multiplier + horizontal-scaling alternative
+     *   5. Strategic note — Wispr Flow pricing, commoditization, SLA trade-off (static)
+     *
+     * Findings 1–4 are computed from the CSV. Finding 5 is editorial/static.
      */
     const findings = [];
 
-    // 1. Latency SLA — who passes every concurrency level, who degrades under load
-    const strictPass = modelNames.filter(m => passes(m, 1) && passes(m, 5) && passes(m, 10));
-    const nearMiss   = modelNames.filter(m => !strictPass.includes(m))
-                                 .sort((a, b) => p99lat(a, 1) - p99lat(b, 1));
+    const byCost   = hasCost ? [...modelNames].sort((a, b) => medCostAtC(a, 5) - medCostAtC(b, 5)) : modelNames;
+    const cheapest = byCost[0];                    // Qwen — 1× cost baseline
+    const priciest = byCost[byCost.length - 1];   // Llama
 
-    if (strictPass.length > 0 && strictPass.length < modelNames.length) {
-      const closest = nearMiss[0];
+    // 1. Llama — latency result and cost vs Qwen baseline
+    const llama = modelNames.find(m => m.toLowerCase().includes('llama'));
+    if (llama) {
+      const l1 = p99lat(llama, 1), l5 = p99lat(llama, 5), l10 = p99lat(llama, 10);
+      const llamaRatio = hasCost ? Math.round(medCostAtC(llama, 5) / medCostAtC(cheapest, 5)) : null;
+      const costNote = llamaRatio ? ` At ~${llamaRatio}× the cost of ${cheapest} per request, it's the most expensive option.` : '';
       findings.push(
-        `<strong>${strictPass.join(' and ')}</strong> ` +
-        `${strictPass.length === 1 ? 'is the only model that' : 'are the only models that'} ` +
-        `reliably meets the 700ms p99 target at every concurrency level tested.` +
-        (closest ? ` <strong>${closest}</strong> comes close at low concurrency but degrades under load.` : '')
-      );
-    } else if (strictPass.length === modelNames.length) {
-      findings.push(`All ${modelNames.length} models meet the 700ms p99 latency target at every concurrency level tested.`);
-    } else {
-      const best = nearMiss[0];
-      findings.push(
-        `No model consistently meets the 700ms target. ` +
-        `<strong>${best}</strong> comes closest at ${fmtMs(p99lat(best, 1))} p99 at c=1.`
+        `<strong>${llama}</strong> is the closest to hitting the 700ms target — passes at c=5 ` +
+        `(${fmtMs(l5)} p99) but edges over at c=1 (${fmtMs(l1)}) and c=10 (${fmtMs(l10)}).${costNote}`
       );
     }
 
-    // 2. Architecture insight — Mistral underperforms smaller models on the same GPU
+    // 2. Qwen — competitive at low concurrency, degrades under load, cheapest baseline
+    const qwen = modelNames.find(m => m.toLowerCase().includes('qwen'));
+    if (qwen) {
+      const q1 = p99lat(qwen, 1), q10 = p99lat(qwen, 10);
+      findings.push(
+        `<strong>${qwen}</strong> is competitive at low concurrency (${fmtMs(q1)} p99 at c=1) ` +
+        `but degrades under load (${fmtMs(q10)} at c=10). Never clears the 700ms target but stays within striking distance. ` +
+        `The cheapest model tested — the 1× cost baseline everything else is measured against.`
+      );
+    }
+
+    // 3. Mistral — same GPU as Qwen but far slower; cost penalty explained by request duration
     const mistral = modelNames.find(m => m.toLowerCase().includes('mistral'));
-    if (mistral) {
-      const sameGpuModels = modelNames.filter(m => m !== mistral && !m.toLowerCase().includes('llama'));
-      const underperforms = sameGpuModels.some(m => p99lat(m, 5) < p99lat(mistral, 5));
-      if (underperforms) {
-        findings.push(
-          `<strong>${mistral}</strong> underperforms both smaller models on the same L4 GPU — ` +
-          `model family and architecture matter as much as parameter count.`
-        );
-      }
+    if (mistral && qwen) {
+      const mistralRatio = hasCost ? +(medCostAtC(mistral, 5) / medCostAtC(cheapest, 5)).toFixed(1) : null;
+      const costNote = mistralRatio
+        ? ` ~${mistralRatio}× the cost of ${qwen} per request, because each request takes ~${mistralRatio}× longer.`
+        : '';
+      findings.push(
+        `<strong>${mistral}</strong> runs on the same L4 GPU as ${qwen} at the same rate but costs${costNote} ` +
+        `P99 latency exceeds 6 seconds across all concurrency levels. ` +
+        `Model family and architecture matter more than parameter count.`
+      );
     }
 
-    // 3. Cost trade-off — compute the actual multiplier and frame the scale-out alternative
-    if (hasCost && modelNames.length > 1) {
-      const byCost  = [...modelNames].sort((a, b) => medCostAtC(a, 5) - medCostAtC(b, 5));
-      const cheapest = byCost[0];
-      const priciest = byCost[byCost.length - 1];
-      const ratio    = Math.round(medCostAtC(priciest, 5) / medCostAtC(cheapest, 5));
-
+    // 4. Cost trade-off — multiplier framing + horizontal scaling recommendation
+    if (hasCost && priciest !== cheapest) {
+      const ratio      = Math.round(medCostAtC(priciest, 5) / medCostAtC(cheapest, 5));
+      const latPenalty = Math.round(((p99lat(cheapest, 5) - p99lat(priciest, 5)) / p99lat(priciest, 5)) * 100);
       if (ratio > 2) {
         findings.push(
-          `<strong>Cost trade-off:</strong> <strong>${priciest}</strong> costs ~${ratio}× more per request than ` +
-          `<strong>${cheapest}</strong>. At scale, multiple ${cheapest} replicas behind a load balancer ` +
-          `could match ${priciest}'s consistency at a fraction of the GPU spend.`
+          `<strong>Cost trade-off:</strong> at ~${ratio}× lower cost, ${cheapest}'s latency penalty vs ${priciest} ` +
+          `is only ~${latPenalty}% at c=5 (${fmtMs(p99lat(cheapest, 5))} vs ${fmtMs(p99lat(priciest, 5))}). ` +
+          `At scale, multiple ${cheapest} replicas behind a load balancer could match ${priciest}'s throughput at a fraction of the GPU spend.`
         );
       }
     }
+
+    // 5. Strategic note — static finding about market context and SLA trade-off
+    const llamaRatioFinal = (hasCost && cheapest && priciest)
+      ? Math.round(medCostAtC(priciest, 5) / medCostAtC(cheapest, 5))
+      : 26;
+    findings.push(
+      `<strong>Worth considering:</strong> at $15/month, Wispr Flow is priced at a premium in a market ` +
+      `where dictation is increasingly commoditized — Claude, Gemini, and ChatGPT now bundle voice input natively. ` +
+      `If the SLA were relaxed from sub-700ms to sub-1s, ${cheapest || 'the cheaper model'} becomes viable at ` +
+      `~${llamaRatioFinal}× lower cost — a meaningful lever worth evaluating as the category matures.`
+    );
 
     document.getElementById('findings-list').innerHTML =
       findings.map(f => `<li>${f}</li>`).join('');

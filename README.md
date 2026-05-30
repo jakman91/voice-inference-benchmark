@@ -20,10 +20,11 @@ All models are deployed via Baseten (TRT-LLM, fp8 quantization, config-only — 
 
 ## Key findings
 
-- **Llama 3.3 70B** (H100×4, $0.43333/min) is the closest to meeting the 700ms p99 target. It passes at c=5 (699ms p99) but edges over at c=1 (703ms) and c=10 (726ms). At ~$0.000375/request at c=5, it's the most expensive option by a wide margin.
-- **Qwen 2.5 3B** (L4, $0.01414/min) is competitive at low concurrency (786ms p99 at c=1) but degrades under load (959ms at c=10). Never clears the 700ms target, but stays within striking distance. At ~$0.000016/request at c=5, it's the cheapest model tested — 23× less than Llama.
-- **Mistral 7B** (L4, $0.01414/min) runs on the same L4 GPU as Qwen at the same cost, but p99 latency exceeds 6 seconds across all concurrency levels. Model family and architecture matter more than parameter count.
-- **Cost trade-off**: Assuming output quality is comparable, Qwen is ~23× cheaper per request than Llama. The latency penalty at c=5 is 838ms vs 699ms — about 20% higher latency for 23× less cost. At scale, multiple Qwen replicas behind a load balancer could match Llama's throughput at a fraction of the GPU spend.
+- **Llama 3.3 70B** (H100×4) is the closest to hitting the 700ms target — passes at c=5 (699ms p99) but edges over at c=1 (703ms) and c=10 (726ms). At ~26× the cost of Qwen per request, it's the most expensive option by a wide margin.
+- **Qwen 2.5 3B** (L4) is competitive at low concurrency (786ms p99 at c=1) but degrades under load (959ms at c=10). Never clears the 700ms target, but stays within striking distance. The cheapest model tested — the 1× cost baseline everything else is measured against.
+- **Mistral 7B** (L4) runs on the same GPU as Qwen at the same rate but costs ~3× more per request, because each request takes ~3× longer. P99 latency exceeds 6 seconds across all concurrency levels. Model family and architecture matter more than parameter count.
+- **Cost trade-off**: At ~26× lower cost, Qwen's latency penalty vs Llama is only ~20% at c=5 (838ms vs 699ms). At scale, multiple Qwen replicas behind a load balancer could match Llama's throughput at a fraction of the GPU spend.
+- **Worth considering**: At $15/month, Wispr Flow is priced at a premium in a market where dictation is increasingly commoditized — Claude, Gemini, and ChatGPT now bundle voice input natively. If the SLA were relaxed from sub-700ms to sub-1s, Qwen becomes viable at ~26× lower cost, which could enable a lower end-user price point as the category matures.
 
 ## Repo structure
 
