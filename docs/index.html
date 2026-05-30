@@ -70,6 +70,13 @@
       margin-bottom: 1.25rem;
     }
 
+    .findings-context {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      margin-bottom: 1.1rem;
+      line-height: 1.5;
+    }
+
     .findings ul {
       list-style: none;
       display: flex;
@@ -78,9 +85,8 @@
     }
 
     .findings li {
-      display: flex;
-      gap: 0.85rem;
-      align-items: flex-start;
+      position: relative;
+      padding-left: 1.4rem;
       font-size: 0.9rem;
       color: #334155;
       line-height: 1.55;
@@ -90,8 +96,9 @@
       content: '▸';
       color: #00B86B;
       font-size: 0.8rem;
-      margin-top: 0.18rem;
-      flex-shrink: 0;
+      position: absolute;
+      left: 0;
+      top: 0.2rem;
     }
 
     /* ── Chart containers ── */
@@ -189,6 +196,7 @@
   <!-- Key findings — populated dynamically from benchmark_results.csv -->
   <div class="findings">
     <h2>Key Findings</h2>
+    <p class="findings-context">Three TRT-LLM models self-deployed on Baseten, benchmarked across 882 requests at three concurrency levels (c=1, 5, 10) to evaluate a sub-700ms p99 total latency target for real-time voice dictation transcript cleanup.</p>
     <ul id="findings-list"><li>Loading data…</li></ul>
   </div>
 
