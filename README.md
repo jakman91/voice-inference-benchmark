@@ -105,7 +105,9 @@ cd docs && python3 -m http.server 8080
 
 The dashboard reads the CSV and renders automatically. Reload after a new benchmark run to update.
 
-## Appendix: Cost methodology
+## Appendix
+
+### Cost methodology
 
 Baseten self-deployed models bill by GPU-minute, not by token. Cost is derived as:
 
