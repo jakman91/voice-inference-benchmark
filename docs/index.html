@@ -204,8 +204,8 @@
 <body>
 
 <header>
-  <h1>Voice Dictation Inference Benchmark</h1>
-  <p id="header-subtitle">TRT-LLM &middot; Baseten &middot; sub-700ms target</p>
+  <h1>Voice Dictation Inference Benchmark Project</h1>
+  <p id="header-subtitle">Prepared By: Jonathan Koch</p>
 </header>
 
 <main>
@@ -214,7 +214,7 @@
   <!-- Benchmarking approach — static summary of methodology -->
   <div class="approach-box">
     <h2>Benchmarking Approach</h2>
-    <p>Three TRT-LLM models self-deployed on Baseten — <strong>Qwen 2.5 3B</strong> (L4), <strong>Mistral 7B Instruct</strong> (L4), and <strong>Llama 3.3 70B</strong> (H100×4) — benchmarked across 882 requests: 14 prompts (5 short ~20 tokens, 5 medium ~50 tokens, 4 long ~100 tokens) × 7 repeats × 3 concurrency levels (c=1, 5, 10). Goal: identify which models hit a sub-700ms p99 total latency target for real-time voice dictation transcript cleanup.</p>
+    <p>Three models self-deployed on Baseten using TRT-LLM: <strong>Qwen 2.5 3B</strong> (L4), <strong>Mistral 7B Instruct</strong> (L4), and <strong>Llama 3.3 70B</strong> (H100×4). Benchmarked across ~900 requests: 33 short inputs (~20 tokens), 33 medium inputs (~50 tokens), and 33 long inputs (~100 tokens) x 3 concurrency levels (c=1, 5, 10) x 3 models. <strong>Goal:</strong> Identify which models hit a sub-700ms p99 total latency target for real-time voice dictation transcript cleanup (the standard set in the <a href="https://www.baseten.co/resources/customers/wispr-flow/">Baseten Wispr Flow Case Study</a>).</p>
   </div>
 
   <!-- Key findings — populated dynamically from benchmark_results.csv -->
@@ -568,7 +568,7 @@
       const llamaRatio = (hasCost && qwen) ? Math.round(medCostAtC(llama, 5) / medCostAtC(qwen, 5)) : null;
       const costNote = llamaRatio ? ` At ~${llamaRatio}× the cost of ${qwen}, it's the most expensive option by a wide margin.` : '';
       findings.push(
-        `<strong>${llama}</strong> is the only model that approaches sub-700ms — passes at c=5 ` +
+        `<strong>${llama}</strong> is the only model that approaches sub-700ms, with passes at c=5 ` +
         `(${fmtMs(l5)} p99) but edges over at c=1 (${fmtMs(l1)}) and c=10 (${fmtMs(l10)}).${costNote}`
       );
     }
@@ -578,10 +578,10 @@
       ? Math.round(medCostAtC(llama, 5) / medCostAtC(qwen, 5))
       : 26;
     findings.push(
-      `<strong>Worth considering:</strong> at $15/month, Wispr Flow is priced at a premium in a market ` +
-      `where dictation is increasingly commoditized — Claude, Gemini, and ChatGPT now bundle voice input natively. ` +
+      `<strong>Cost Consideration:</strong> At $15/month, Wispr Flow is priced at a premium in a market ` +
+      `where dictation is increasingly commoditized. For example, Claude, Gemini, and ChatGPT now bundle voice input natively. ` +
       `If the SLA were relaxed from sub-700ms to sub-1s, ${qwen || 'the cheaper model'} becomes viable at ` +
-      `~${llamaRatioFinal}× lower cost — a meaningful lever worth evaluating as the category matures.`
+      `~${llamaRatioFinal}× lower cost which could be a meaningful lever worth evaluating as the category matures given sup 1 second P99 latency is still very impressive.`
     );
 
     document.getElementById('findings-list').innerHTML =

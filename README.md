@@ -20,8 +20,8 @@ All models are deployed via Baseten (TRT-LLM, fp8 quantization, config-only — 
 
 ## Key findings
 
-- **Llama 3.3 70B** is the only model that approaches sub-700ms — passes at c=5 (699ms p99) but edges over at c=1 (703ms) and c=10 (726ms). At ~26× the cost of Qwen per request, it's the most expensive option by a wide margin.
-- **Worth considering**: At $15/month, Wispr Flow is priced at a premium in a market where dictation is increasingly commoditized — Claude, Gemini, and ChatGPT now bundle voice input natively. If the SLA were relaxed from sub-700ms to sub-1s, Qwen becomes viable at ~26× lower cost — a meaningful lever worth evaluating as the category matures.
+- **Llama 3.3 70B** is the only model that approaches sub-700ms, with passes at c=5 (699ms p99) but edges over at c=1 (703ms) and c=10 (726ms). At ~26× the cost of Qwen per request, it's the most expensive option by a wide margin.
+- **Cost Consideration:** At $15/month, Wispr Flow is priced at a premium in a market where dictation is increasingly commoditized. For example, Claude, Gemini, and ChatGPT now bundle voice input natively. If the SLA were relaxed from sub-700ms to sub-1s, Qwen becomes viable at ~26× lower cost, which could be a meaningful lever worth evaluating as the category matures given sub-1s p99 latency is still very impressive.
 
 ## Per-model results
 
@@ -90,7 +90,7 @@ pip install httpx numpy
 python scripts/benchmark.py
 ```
 
-Runs ~882 requests (3 models × 14 prompts × 7 repeats × 3 concurrency levels). Takes 10–20 minutes. Results are written to `docs/results/benchmark_results.csv`.
+Runs ~900 requests (33 short + 33 medium + 33 long prompts × 3 concurrency levels × 3 models). Takes 10–20 minutes. Results are written to `docs/results/benchmark_results.csv`.
 
 ### 6. View the dashboard
 
