@@ -114,3 +114,9 @@ cost_per_request = (latency_s / 60) × instance_cost_per_min / concurrency
 ```
 
 At higher concurrency the GPU serves multiple requests simultaneously, so cost is amortized across concurrent requests. This reflects real production economics — a model at 10% utilization costs 10× more per request than one running at capacity.
+
+### Assumptions
+
+**Output quality is equivalent across models.** The benchmark measures latency and cost only — it does not score output quality. This is reasonable given the task (cleaning up short spoken transcripts) is straightforward enough that all three models produce acceptable results. For more complex or nuanced tasks, quality differences between a 3B and 70B model would need to be factored in separately.
+
+**Cost is compared at equal concurrency, not equal throughput.** Because Baseten bills per GPU-minute regardless of utilization, the total infrastructure cost of keeping a server running is fixed — a faster model doesn't reduce your bill unless it lets you scale down servers. What latency *does* affect is cost per request: a faster model at the same concurrency level serves each request more cheaply. At production scale, a lower-latency model like Qwen could also handle significantly more requests per server before needing to add replicas, which would improve its cost-per-request advantage further relative to a slower model requiring more horizontal scale to match the same throughput.
